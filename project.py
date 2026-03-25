@@ -4,8 +4,7 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler, PolynomialFeatures
+from sklearn.preprocessing import PolynomialFeatures
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 
@@ -14,84 +13,124 @@ from statsmodels.tsa.stattools import adfuller
 import statsmodels.api as sm
 import scipy.stats as stats
 
-
 # ------------------------------------------------
 # PAGE CONFIG
 # ------------------------------------------------
-st.set_page_config(page_title="Retail Analytics Dashboard", layout="wide")
-st.title("📊 Universal Retail Analytics Dashboard")
+st.set_page_config(page_title="Universal Analytics Dashboard", layout="wide")
+st.title("📊 Universal Data Analytics Dashboard")
 
 # ------------------------------------------------
-# SIDEBAR MENU
+# SIDEBAR
 # ------------------------------------------------
-option = st.sidebar.selectbox("Select Analysis", [
-    "Overview",
-    "Index Numbers",
-    "Regression",
-    "ANOVA & Tests",
-    "Time Series",
-    "Feature Selection",
-    "Performance Metrics"
-])
+st.sidebar.title("📌 Analysis Menu")
+
+option = st.sidebar.radio(
+    "Choose Analysis",
+    [
+        "Overview",
+        "Index Numbers",
+        "Regression Models",
+        "ANOVA & Tests",
+        "Time Series Analysis",
+        "Feature Selection",
+        "Performance Evaluation",
+        "Inference"
+    ]
+)
 
 # ------------------------------------------------
 # FILE UPLOAD
 # ------------------------------------------------
-uploaded_file = st.file_uploader("Upload Dataset", type=["csv", "xlsx"])
+file = st.file_uploader("Upload Dataset", type=["csv", "xlsx"])
 
-if uploaded_file:
+if file:
 
-    if uploaded_file.name.endswith(".csv"):
-        df = pd.read_csv(uploaded_file)
-    else:
-        df = pd.read_excel(uploaded_file)
+    try:
+        if file.name.endswith(".csv"):
+            df = pd.read_csv(file)
+        else:
+            df = pd.read_excel(file)
+    except Exception:
+        st.error("Error reading file")
+        st.stop()
+
+    df = df.drop_duplicates()
+
+    for col in df.columns:
+        if df[col].dtype == "object":
+            df[col] = df[col].astype(str)
 
     st.subheader("Dataset Preview")
     st.dataframe(df.head())
 
     # ------------------------------------------------
-    # COLUMN DETECTION
+    # AUTO COLUMN DETECTION
     # ------------------------------------------------
     date_col = None
     sales_col = None
     quantity_col = None
-    customer_col = None
     product_col = None
+    customer_col = None
+    country_col = None
 
     for col in df.columns:
         c = col.lower()
 
-        if "date" in c:
+        if "date" in c or "time" in c:
             date_col = col
-        if "sales" in c or "price" in c or "amount" in c:
+
+        if any(x in c for x in ["sales", "price", "amount", "revenue", "value", "total", "unitprice"]):
             sales_col = col
-        if "quantity" in c:
+
+        if any(x in c for x in ["quantity", "qty", "units"]):
             quantity_col = col
-        if "customer" in c:
-            customer_col = col
-        if "product" in c or "description" in c:
+
+        if any(x in c for x in ["product", "description", "item"]):
             product_col = col
 
+        if "customer" in c:
+            customer_col = col
+
+        if "country" in c:
+            country_col = col
+
+    if not sales_col:
+        sales_col = df.columns[0]
+
     # ------------------------------------------------
-    # SALES CALCULATION
+    # NUMERIC FIX
     # ------------------------------------------------
-    if quantity_col and sales_col:
-        df["TotalSales"] = df[quantity_col] * df[sales_col]
-    elif sales_col:
-        df["TotalSales"] = df[sales_col]
+    df[sales_col] = pd.to_numeric(df[sales_col], errors="coerce")
+
+    if quantity_col:
+        df[quantity_col] = pd.to_numeric(df[quantity_col], errors="coerce")
+        df["TotalSales"] = df[sales_col] * df[quantity_col]
     else:
-        st.error("No sales column found")
-        st.stop()
+        df["TotalSales"] = df[sales_col]
+
+    df = df.dropna(subset=["TotalSales"])
 
     # ------------------------------------------------
     # DATE PROCESSING
     # ------------------------------------------------
+    sales_month = None
     if date_col:
-        df[date_col] = pd.to_datetime(df[date_col])
-        df["YearMonth"] = df[date_col].dt.to_period("M")
+        try:
+            df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+            df = df.dropna(subset=[date_col])
+            df["YearMonth"] = df[date_col].dt.to_period("M")
+            sales_month = df.groupby("YearMonth")["TotalSales"].sum()
+            sales_month.index = sales_month.index.to_timestamp()
+        except Exception:
+            date_col = None
+            sales_month = None
 
-        sales_month = df.groupby("YearMonth")["TotalSales"].sum()
-        sales_month.index = sales_month.index.to_timestamp()
+    # ------------------------------------------------
+    # CLEAN NUMERIC
+    # ------------------------------------------------
+    numeric = df.select_dtypes(include="number").copy()
+    numeric = numeric.replace([np.inf, -np.inf], np.nan)
+    numeric = numeric.fillna(numeric.mean())
 
     # ------------------------------------------------
     # OVERVIEW
@@ -100,18 +139,23 @@ if uploaded_file:
 
         st.subheader("Key Metrics")
 
-        c1, c2, c3, c4 = st.columns(4)
-
-        c1.metric("Revenue", f"{df['TotalSales'].sum():,.0f}")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total Revenue", f"{float(df['TotalSales'].sum()):,.0f}")
         c2.metric("Transactions", len(df))
-        c3.metric("Customers", df[customer_col].nunique() if customer_col else 0)
-        c4.metric("Avg Order", f"{df['TotalSales'].mean():.2f}")
+        c3.metric("Average Sales", f"{float(df['TotalSales'].mean()):.2f}")
 
         st.subheader("Descriptive Statistics")
-        numeric = df.select_dtypes(include="number")
         st.dataframe(numeric.describe())
 
-        st.subheader("Correlation Heatmap")
+        st.subheader("Sales Distribution")
+        fig, ax = plt.subplots()
+        df["TotalSales"].hist(bins=30, ax=ax)
+        ax.set_xlabel("TotalSales")
+        ax.set_ylabel("Frequency")
+        ax.set_title("Histogram of Total Sales")
+        st.pyplot(fig)
+
+        st.subheader("Correlation Matrix")
         fig, ax = plt.subplots()
         sns.heatmap(numeric.corr(), annot=True, cmap="coolwarm", ax=ax)
         st.pyplot(fig)
@@ -121,128 +165,296 @@ if uploaded_file:
     # ------------------------------------------------
     if option == "Index Numbers":
 
-        base = df.iloc[0]["TotalSales"]
+        base = df["TotalSales"].iloc[0]
 
         simple = df["TotalSales"].sum() / base * 100
-        weighted = (df["TotalSales"] * df["TotalSales"]).sum() / df["TotalSales"].sum()
-
+        weighted = (df["TotalSales"] ** 2).sum() / df["TotalSales"].sum()
         laspeyres = simple
         paasche = weighted
         fisher = (laspeyres * paasche) ** 0.5
 
-        st.write("Simple Index:", simple)
-        st.write("Weighted Index:", weighted)
-        st.write("Laspeyres:", laspeyres)
-        st.write("Paasche:", paasche)
-        st.write("Fisher Index:", fisher)
+        st.subheader("Index Numbers")
+        st.write(f"Simple Index: {simple:.2f}")
+        st.write(f"Weighted Index: {weighted:.2f}")
+        st.write(f"Laspeyres Index: {laspeyres:.2f}")
+        st.write(f"Paasche Index: {paasche:.2f}")
+        st.write(f"Fisher Index: {fisher:.2f}")
+
+        fig, ax = plt.subplots()
+        ax.bar(
+            ["Simple", "Weighted", "Laspeyres", "Paasche", "Fisher"],
+            [simple, weighted, laspeyres, paasche, fisher]
+        )
+        ax.set_title("Index Number Comparison")
+        st.pyplot(fig)
 
     # ------------------------------------------------
     # REGRESSION
     # ------------------------------------------------
-    if option == "Regression":
+    if option == "Regression Models":
 
-        numeric = df.select_dtypes(include="number").dropna()
+        if len(numeric.columns) > 1:
 
-        if "TotalSales" in numeric.columns and len(numeric.columns) > 1:
-
-            X = numeric.drop(columns=["TotalSales"])
+            X = numeric.drop(columns=["TotalSales"], errors="ignore")
             y = numeric["TotalSales"]
 
-            model = LinearRegression()
-            model.fit(X, y)
+            X = X.fillna(X.mean())
+            y = y.fillna(y.mean())
 
-            st.write("Linear Regression Coefficients:", model.coef_)
+            if X.shape[1] > 0:
+                st.subheader("Linear Regression")
+                lin = LinearRegression()
+                lin.fit(X, y)
+                y_pred = lin.predict(X)
 
-            poly = PolynomialFeatures(2)
-            X_poly = poly.fit_transform(X)
+                st.write("Coefficients:", lin.coef_)
 
-            model.fit(X_poly, y)
-            st.write("Polynomial Regression Done")
+                fig, ax = plt.subplots()
+                ax.scatter(y, y_pred)
+                ax.set_xlabel("Actual")
+                ax.set_ylabel("Predicted")
+                ax.set_title("Linear Regression")
+                st.pyplot(fig)
 
-            y_binary = (y > y.mean()).astype(int)
+                st.subheader("Polynomial Regression")
+                poly = PolynomialFeatures(2)
+                X_poly = poly.fit_transform(X)
 
-            log_model = LogisticRegression()
-            log_model.fit(X, y_binary)
+                lin.fit(X_poly, y)
+                y_poly = lin.predict(X_poly)
 
-            st.write("Logistic Regression Done")
+                fig, ax = plt.subplots()
+                ax.scatter(y, y_poly)
+                ax.set_xlabel("Actual")
+                ax.set_ylabel("Predicted")
+                ax.set_title("Polynomial Regression")
+                st.pyplot(fig)
 
+                st.subheader("Logistic Regression")
+                y_bin = (y > y.mean()).astype(int)
+
+                if y_bin.nunique() > 1:
+                    log = LogisticRegression(max_iter=1000)
+                    log.fit(X, y_bin)
+                    pred = log.predict(X)
+
+                    fig, ax = plt.subplots()
+                    ax.scatter(range(len(pred)), pred)
+                    ax.set_title("Logistic Regression")
+                    st.pyplot(fig)
+                else:
+                    st.warning("Logistic Regression needs at least two target classes.")
+            else:
+                st.warning("No predictor columns available for regression.")
         else:
-            st.warning("Not enough numeric data")
+            st.warning("Not enough numeric columns for regression.")
 
     # ------------------------------------------------
-    # ANOVA & TESTS
+    # ANOVA
     # ------------------------------------------------
     if option == "ANOVA & Tests":
 
-        numeric = df.select_dtypes(include="number")
-
         if len(numeric.columns) >= 2:
 
-            f, p = stats.f_oneway(numeric.iloc[:,0], numeric.iloc[:,1])
-            st.write("One-Way ANOVA p-value:", p)
+            f_stat, p_anova = stats.f_oneway(numeric.iloc[:, 0], numeric.iloc[:, 1])
+            u_stat, p_mw = stats.mannwhitneyu(numeric.iloc[:, 0], numeric.iloc[:, 1])
 
-            u, p = stats.mannwhitneyu(numeric.iloc[:,0], numeric.iloc[:,1])
-            st.write("Mann-Whitney p-value:", p)
+            st.write(f"ANOVA p-value: {p_anova:.4f}")
+            st.write(f"Mann-Whitney p-value: {p_mw:.4f}")
+
+            fig, ax = plt.subplots()
+            numeric.boxplot(ax=ax)
+            ax.set_title("Boxplot Comparison")
+            st.pyplot(fig)
+        else:
+            st.warning("At least two numeric columns are required.")
 
     # ------------------------------------------------
     # TIME SERIES
     # ------------------------------------------------
-    if option == "Time Series":
+    if option == "Time Series Analysis":
 
-        if date_col:
+        if sales_month is not None and len(sales_month) >= 6:
 
-            result = adfuller(sales_month)
-            st.write("ADF Test p-value:", result[1])
+            st.subheader("Time Series Analysis")
+
+            adf_result = adfuller(sales_month)
+            st.write(f"ADF Test p-value: {adf_result[1]:.4f}")
 
             ma = sales_month.rolling(3).mean()
             exp = sales_month.ewm(span=3).mean()
 
-            model = ARIMA(sales_month, order=(1,1,1))
-            fit = model.fit()
-            forecast = fit.forecast(3)
+            model = ARIMA(sales_month, order=(1, 1, 1)).fit()
+            forecast = model.forecast(3)
 
-            fig, ax = plt.subplots()
+            st.write("ARIMA Model: (1,1,1)")
+
+            fig, ax = plt.subplots(figsize=(8, 4))
             ax.plot(sales_month, label="Original")
-            ax.plot(ma, label="MA")
-            ax.plot(exp, label="Exp")
+            ax.plot(ma, label="Moving Avg")
+            ax.plot(exp, label="Exp Smoothing")
             ax.plot(forecast, label="Forecast")
-
             ax.legend()
+            ax.grid(True)
+            ax.set_title("ARIMA Forecasting")
             st.pyplot(fig)
+        else:
+            st.warning("A valid date column with enough time points is required.")
 
     # ------------------------------------------------
     # FEATURE SELECTION
     # ------------------------------------------------
     if option == "Feature Selection":
 
-        numeric = df.select_dtypes(include="number").dropna()
+        if len(numeric.columns) > 1:
 
-        if "TotalSales" in numeric.columns:
-
-            X = numeric.drop(columns=["TotalSales"])
+            X = numeric.drop(columns=["TotalSales"], errors="ignore")
             y = numeric["TotalSales"]
 
-            X = sm.add_constant(X)
+            X = X.replace([np.inf, -np.inf], np.nan).fillna(X.mean())
+            y = y.replace([np.inf, -np.inf], np.nan).fillna(y.mean())
 
-            model = sm.OLS(y, X).fit()
-            st.text(model.summary())
+            data = pd.concat([X, y], axis=1).dropna()
+
+            X = data.drop(columns=["TotalSales"])
+            y = data["TotalSales"]
+
+            if X.shape[1] > 0:
+                X = sm.add_constant(X)
+                model = sm.OLS(y, X).fit()
+
+                st.text(model.summary())
+
+                fig, ax = plt.subplots()
+                model.params[1:].plot(kind="bar", ax=ax)
+                ax.set_title("Feature Importance")
+                st.pyplot(fig)
+            else:
+                st.warning("No predictor columns available for feature selection.")
+        else:
+            st.warning("Not enough numeric columns for feature selection.")
 
     # ------------------------------------------------
-    # PERFORMANCE METRICS
+    # PERFORMANCE
     # ------------------------------------------------
-    if option == "Performance Metrics":
+    if option == "Performance Evaluation":
 
-        if date_col:
+        if sales_month is not None and len(sales_month) >= 6:
 
-            model = ARIMA(sales_month, order=(1,1,1)).fit()
+            model = ARIMA(sales_month, order=(1, 1, 1)).fit()
             forecast = model.forecast(3)
-
             y_true = sales_month[-3:]
 
             mse = mean_squared_error(y_true, forecast)
             rmse = np.sqrt(mse)
             mae = mean_absolute_error(y_true, forecast)
 
-            st.write("MSE:", mse)
-            st.write("RMSE:", rmse)
-            st.write("MAE:", mae)
+            st.subheader("Performance Metrics")
+            st.write(f"MSE (Mean Squared Error): {mse:.2f}")
+            st.write(f"RMSE (Root Mean Squared Error): {rmse:.2f}")
+            st.write(f"MAE (Mean Absolute Error): {mae:.2f}")
+
+            fig, ax = plt.subplots()
+            ax.bar(["MSE", "RMSE", "MAE"], [mse, rmse, mae])
+            ax.set_title("Performance Metrics")
+            st.pyplot(fig)
+        else:
+            st.warning("A valid date column with enough time points is required.")
+
+    # ------------------------------------------------
+    # INFERENCE
+    # ------------------------------------------------
+    if option == "Inference":
+
+        st.subheader("Dataset Inference")
+
+        insights = []
+
+        total_revenue = df["TotalSales"].sum()
+        avg_sales = df["TotalSales"].mean()
+        max_sale = df["TotalSales"].max()
+        min_sale = df["TotalSales"].min()
+
+        insights.append(
+            f"The dataset generated a total revenue of {total_revenue:,.2f}, with an average transaction value of {avg_sales:,.2f}."
+        )
+
+        insights.append(
+            f"The highest transaction value is {max_sale:,.2f}, while the minimum transaction value is {min_sale:,.2f}."
+        )
+
+        if quantity_col and quantity_col in df.columns:
+            total_qty = pd.to_numeric(df[quantity_col], errors="coerce").fillna(0).sum()
+            insights.append(
+                f"The dataset records a total quantity of {total_qty:,.0f} units sold."
+            )
+
+        if product_col and product_col in df.columns:
+            top_product_series = df.groupby(product_col)["TotalSales"].sum().sort_values(ascending=False)
+            if len(top_product_series) > 0:
+                top_product = top_product_series.index[0]
+                top_product_sales = top_product_series.iloc[0]
+                insights.append(
+                    f"The top revenue-generating product is '{top_product}' with total sales of {top_product_sales:,.2f}."
+                )
+
+        if customer_col and customer_col in df.columns:
+            top_customer_series = df.groupby(customer_col)["TotalSales"].sum().sort_values(ascending=False)
+            if len(top_customer_series) > 0:
+                top_customer = top_customer_series.index[0]
+                top_customer_sales = top_customer_series.iloc[0]
+                insights.append(
+                    f"The highest contributing customer is '{top_customer}', generating sales of {top_customer_sales:,.2f}."
+                )
+
+        if country_col and country_col in df.columns:
+            top_country_series = df.groupby(country_col)["TotalSales"].sum().sort_values(ascending=False)
+            if len(top_country_series) > 0:
+                top_country = top_country_series.index[0]
+                top_country_sales = top_country_series.iloc[0]
+                insights.append(
+                    f"The leading market is '{top_country}', contributing {top_country_sales:,.2f} in sales."
+                )
+
+        if sales_month is not None and len(sales_month) >= 2:
+            recent_value = sales_month.iloc[-1]
+            historical_mean = sales_month.mean()
+
+            if recent_value > historical_mean:
+                insights.append(
+                    "Recent sales are above the historical average, indicating a positive overall trend."
+                )
+            else:
+                insights.append(
+                    "Recent sales are below the historical average, indicating a possible slowdown in performance."
+                )
+
+            try:
+                model = ARIMA(sales_month, order=(1, 1, 1)).fit()
+                forecast = model.forecast(3)
+                forecast_avg = forecast.mean()
+
+                if forecast_avg > recent_value:
+                    insights.append(
+                        "ARIMA forecasting suggests that sales may improve in the upcoming periods."
+                    )
+                else:
+                    insights.append(
+                        "ARIMA forecasting suggests that sales may remain stable or slightly decline in the upcoming periods."
+                    )
+            except Exception:
+                pass
+
+        if len(numeric.columns) > 1:
+            corr_matrix = numeric.corr()
+            if "TotalSales" in corr_matrix.columns:
+                sales_corr = corr_matrix["TotalSales"].drop(labels=["TotalSales"], errors="ignore")
+                if len(sales_corr) > 0:
+                    top_corr_feature = sales_corr.abs().sort_values(ascending=False).index[0]
+                    top_corr_value = sales_corr[top_corr_feature]
+                    insights.append(
+                        f"The variable most strongly associated with TotalSales is '{top_corr_feature}' with a correlation of {top_corr_value:.2f}."
+                    )
+
+        for item in insights:
+            st.write("•", item)
