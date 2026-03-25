@@ -1,4 +1,3 @@
-
 # =====================================================
 # 1 IMPORT LIBRARIES
 # =====================================================
@@ -9,9 +8,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from sklearn.linear_model import LinearRegression, LogisticRegression
-from sklearn.preprocessing import PolynomialFeatures
+from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, mean_absolute_error
+from sklearn.cluster import KMeans
 
 from scipy.stats import f_oneway, mannwhitneyu
 from statsmodels.tsa.stattools import adfuller
@@ -295,10 +295,58 @@ print(metrics_table)
 
 
 # =====================================================
-# 19 VISUAL ANALYTICS
+# 19 CUSTOMER SEGMENTATION (K-MEANS)
 # =====================================================
 
-# Sales Distribution
+customer_data = df.groupby('CustomerID').agg({
+'TotalPrice':'sum',
+'Quantity':'sum'
+})
+
+scaler = StandardScaler()
+
+scaled_data = scaler.fit_transform(customer_data)
+
+kmeans = KMeans(n_clusters=3, random_state=42)
+
+customer_data['Cluster'] = kmeans.fit_predict(scaled_data)
+
+print("\nCUSTOMER SEGMENTS")
+print(customer_data.head())
+
+
+plt.figure()
+plt.scatter(customer_data['Quantity'], customer_data['TotalPrice'],
+c=customer_data['Cluster'], cmap='viridis')
+
+plt.xlabel("Total Quantity Purchased")
+plt.ylabel("Total Spending")
+plt.title("Customer Segmentation")
+plt.show()
+
+
+# =====================================================
+# 20 TOP SELLING PRODUCTS
+# =====================================================
+
+top_products = df.groupby('Description')['Quantity'].sum().sort_values(ascending=False).head(10)
+
+print("\nTOP 10 PRODUCTS")
+print(top_products)
+
+plt.figure()
+top_products.plot(kind='bar')
+
+plt.title("Top Selling Products")
+plt.xlabel("Product")
+plt.ylabel("Quantity Sold")
+
+plt.show()
+
+
+# =====================================================
+# 21 VISUAL ANALYTICS
+# =====================================================
 
 plt.figure()
 plt.hist(df['TotalPrice'], bins=50)
@@ -308,17 +356,11 @@ plt.ylabel("Frequency")
 plt.show()
 
 
-# Correlation Heatmap
-
 plt.figure()
-sns.heatmap(df[['Quantity','UnitPrice','TotalPrice']].corr(),
-annot=True,cmap="coolwarm")
-
+sns.heatmap(df[['Quantity','UnitPrice','TotalPrice']].corr(), annot=True, cmap="coolwarm")
 plt.title("Correlation Heatmap")
 plt.show()
 
-
-# Top Countries Sales
 
 country_sales = df.groupby('Country')['TotalPrice'].sum().sort_values(ascending=False).head(10)
 
@@ -330,8 +372,6 @@ plt.ylabel("Total Sales")
 plt.show()
 
 
-# Monthly Sales Trend
-
 plt.figure()
 sales_month.plot()
 plt.title("Monthly Sales Trend")
@@ -340,8 +380,6 @@ plt.ylabel("Sales")
 plt.show()
 
 
-# Moving Average Trend
-
 plt.figure()
 plt.plot(sales_month,label="Original Sales")
 plt.plot(moving_avg,label="Moving Average")
@@ -349,8 +387,6 @@ plt.legend()
 plt.title("Sales Trend with Moving Average")
 plt.show()
 
-
-# Forecast Plot
 
 plt.figure()
 plt.plot(sales_month,label="Historical Sales")
