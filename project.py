@@ -4,11 +4,12 @@
 
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import seaborn as sns
+import matplotlib.pyplot as plt
 
 from tkinter import *
 from tkinter import filedialog, messagebox
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
@@ -17,203 +18,239 @@ from statsmodels.tsa.arima.model import ARIMA
 
 
 # =====================================================
-# GLOBAL DATAFRAME
+# GLOBAL VARIABLES
 # =====================================================
 
 df = None
 
 
 # =====================================================
-# LOAD DATASET
+# FUNCTION: LOAD DATASET
 # =====================================================
 
 def load_dataset():
-    
+
     global df
-    
+
     file = filedialog.askopenfilename()
-    
+
     if file == "":
         return
-    
+
     df = pd.read_excel(file)
-    
+
     df.dropna(inplace=True)
-    
+
     df = df[df['Quantity'] > 0]
     df = df[df['UnitPrice'] > 0]
-    
+
     df['TotalPrice'] = df['Quantity'] * df['UnitPrice']
-    
+
     df['InvoiceDate'] = pd.to_datetime(df['InvoiceDate'])
-    
+
     df['YearMonth'] = df['InvoiceDate'].dt.to_period('M')
-    
-    messagebox.showinfo("Success", "Dataset Loaded Successfully")
+
+    text_box.delete(1.0, END)
+    text_box.insert(END, "Dataset Loaded Successfully\n")
+    text_box.insert(END, f"Rows: {df.shape[0]}  Columns: {df.shape[1]}\n")
 
 
 # =====================================================
-# DESCRIPTIVE STATISTICS
+# FUNCTION: SHOW STATISTICS
 # =====================================================
 
 def show_statistics():
-    
+
     if df is None:
         messagebox.showwarning("Warning","Load dataset first")
         return
-    
+
     stats = df[['Quantity','UnitPrice','TotalPrice']].describe()
-    
-    print("\nDESCRIPTIVE STATISTICS")
-    print(stats)
+
+    text_box.delete(1.0, END)
+    text_box.insert(END, "DESCRIPTIVE STATISTICS\n\n")
+    text_box.insert(END, stats.to_string())
 
 
 # =====================================================
-# CORRELATION HEATMAP
-# =====================================================
-
-def show_correlation():
-    
-    if df is None:
-        messagebox.showwarning("Warning","Load dataset first")
-        return
-    
-    plt.figure()
-    
-    corr = df[['Quantity','UnitPrice','TotalPrice']].corr()
-    
-    sns.heatmap(corr, annot=True, cmap="coolwarm")
-    
-    plt.title("Correlation Heatmap")
-    
-    plt.show()
-
-
-# =====================================================
-# TOP PRODUCTS
+# FUNCTION: TOP PRODUCTS GRAPH
 # =====================================================
 
 def top_products():
-    
+
     if df is None:
         messagebox.showwarning("Warning","Load dataset first")
         return
-    
+
     top_products = df.groupby('Description')['Quantity'].sum().sort_values(ascending=False).head(10)
-    
-    print("\nTOP PRODUCTS")
-    print(top_products)
-    
-    plt.figure()
-    
-    top_products.plot(kind='bar')
-    
-    plt.title("Top Selling Products")
-    
-    plt.xlabel("Product")
-    plt.ylabel("Quantity Sold")
-    
-    plt.show()
+
+    fig.clear()
+
+    ax = fig.add_subplot(111)
+
+    top_products.plot(kind='bar', ax=ax)
+
+    ax.set_title("Top Selling Products")
+    ax.set_xlabel("Product")
+    ax.set_ylabel("Quantity")
+
+    canvas.draw()
 
 
 # =====================================================
-# CUSTOMER SEGMENTATION
+# FUNCTION: CORRELATION HEATMAP
 # =====================================================
 
-def customer_segmentation():
-    
+def correlation():
+
     if df is None:
         messagebox.showwarning("Warning","Load dataset first")
         return
-    
+
+    fig.clear()
+
+    ax = fig.add_subplot(111)
+
+    corr = df[['Quantity','UnitPrice','TotalPrice']].corr()
+
+    sns.heatmap(corr, annot=True, cmap="coolwarm", ax=ax)
+
+    ax.set_title("Correlation Heatmap")
+
+    canvas.draw()
+
+
+# =====================================================
+# FUNCTION: CUSTOMER SEGMENTATION
+# =====================================================
+
+def segmentation():
+
+    if df is None:
+        messagebox.showwarning("Warning","Load dataset first")
+        return
+
     customer_data = df.groupby('CustomerID').agg({
         'TotalPrice':'sum',
         'Quantity':'sum'
     })
-    
+
     scaler = StandardScaler()
-    
+
     scaled = scaler.fit_transform(customer_data)
-    
+
     kmeans = KMeans(n_clusters=3, random_state=42)
-    
+
     customer_data['Cluster'] = kmeans.fit_predict(scaled)
-    
-    plt.figure()
-    
-    plt.scatter(customer_data['Quantity'],
-                customer_data['TotalPrice'],
-                c=customer_data['Cluster'],
-                cmap='viridis')
-    
-    plt.xlabel("Quantity Purchased")
-    plt.ylabel("Total Spending")
-    
-    plt.title("Customer Segmentation")
-    
-    plt.show()
+
+    fig.clear()
+
+    ax = fig.add_subplot(111)
+
+    scatter = ax.scatter(customer_data['Quantity'],
+                         customer_data['TotalPrice'],
+                         c=customer_data['Cluster'],
+                         cmap='viridis')
+
+    ax.set_title("Customer Segmentation")
+    ax.set_xlabel("Quantity Purchased")
+    ax.set_ylabel("Total Spending")
+
+    canvas.draw()
 
 
 # =====================================================
-# MONTHLY SALES TREND
+# FUNCTION: SALES TREND
 # =====================================================
 
-def monthly_sales():
-    
+def sales_trend():
+
     if df is None:
         messagebox.showwarning("Warning","Load dataset first")
         return
-    
+
     sales_month = df.groupby('YearMonth')['TotalPrice'].sum()
-    
+
     sales_month.index = sales_month.index.to_timestamp()
-    
-    plt.figure()
-    
-    sales_month.plot()
-    
-    plt.title("Monthly Sales Trend")
-    
-    plt.xlabel("Month")
-    plt.ylabel("Sales")
-    
-    plt.show()
+
+    fig.clear()
+
+    ax = fig.add_subplot(111)
+
+    sales_month.plot(ax=ax)
+
+    ax.set_title("Monthly Sales Trend")
+    ax.set_xlabel("Month")
+    ax.set_ylabel("Sales")
+
+    canvas.draw()
 
 
 # =====================================================
-# ARIMA FORECAST
+# FUNCTION: FORECAST
 # =====================================================
 
-def arima_forecast():
-    
+def forecast():
+
     if df is None:
         messagebox.showwarning("Warning","Load dataset first")
         return
-    
+
     sales_month = df.groupby('YearMonth')['TotalPrice'].sum()
-    
+
     sales_month.index = sales_month.index.to_timestamp()
-    
+
     model = ARIMA(sales_month, order=(1,1,1))
-    
+
     model_fit = model.fit()
-    
-    forecast = model_fit.forecast(steps=3)
-    
-    print("\nFORECAST")
-    print(forecast)
-    
-    plt.figure()
-    
-    plt.plot(sales_month, label="Historical Sales")
-    
-    plt.plot(forecast, label="Forecast", color="red")
-    
-    plt.legend()
-    
-    plt.title("Sales Forecast")
-    
-    plt.show()
+
+    future = model_fit.forecast(steps=3)
+
+    fig.clear()
+
+    ax = fig.add_subplot(111)
+
+    ax.plot(sales_month, label="Historical")
+
+    ax.plot(future, label="Forecast", color="red")
+
+    ax.legend()
+
+    ax.set_title("Sales Forecast")
+
+    canvas.draw()
+
+
+# =====================================================
+# FUNCTION: INFERENCE
+# =====================================================
+
+def inference():
+
+    if df is None:
+        messagebox.showwarning("Warning","Load dataset first")
+        return
+
+    top_country = df.groupby('Country')['TotalPrice'].sum().idxmax()
+
+    top_product = df.groupby('Description')['Quantity'].sum().idxmax()
+
+    avg_sales = df['TotalPrice'].mean()
+
+    text_box.delete(1.0, END)
+
+    text_box.insert(END, "DATASET INSIGHTS\n\n")
+
+    text_box.insert(END, f"Average Transaction Value: {avg_sales:.2f}\n\n")
+
+    text_box.insert(END, f"Top Revenue Country: {top_country}\n\n")
+
+    text_box.insert(END, f"Most Popular Product: {top_product}\n\n")
+
+    text_box.insert(END, "Business Insight:\n")
+    text_box.insert(END, "The dataset shows strong purchasing behavior in the top country. ")
+    text_box.insert(END, "The identified top product has the highest demand, indicating ")
+    text_box.insert(END, "potential opportunities for targeted marketing and inventory planning.")
 
 
 # =====================================================
@@ -224,70 +261,47 @@ root = Tk()
 
 root.title("Retail Predictive Analytics Dashboard")
 
-root.geometry("500x500")
+root.geometry("1000x600")
 
 
-title = Label(root,
-              text="Retail Predictive Analytics Tool",
-              font=("Arial",16,"bold"))
+# LEFT PANEL BUTTONS
 
-title.pack(pady=20)
+frame = Frame(root)
 
-
-btn1 = Button(root,
-              text="Load Dataset",
-              width=25,
-              command=load_dataset)
-
-btn1.pack(pady=5)
+frame.pack(side=LEFT, padx=10)
 
 
-btn2 = Button(root,
-              text="Show Descriptive Statistics",
-              width=25,
-              command=show_statistics)
+Button(frame, text="Load Dataset", width=20, command=load_dataset).pack(pady=5)
 
-btn2.pack(pady=5)
+Button(frame, text="Statistics", width=20, command=show_statistics).pack(pady=5)
 
+Button(frame, text="Top Products", width=20, command=top_products).pack(pady=5)
 
-btn3 = Button(root,
-              text="Correlation Heatmap",
-              width=25,
-              command=show_correlation)
+Button(frame, text="Correlation", width=20, command=correlation).pack(pady=5)
 
-btn3.pack(pady=5)
+Button(frame, text="Customer Segmentation", width=20, command=segmentation).pack(pady=5)
 
+Button(frame, text="Sales Trend", width=20, command=sales_trend).pack(pady=5)
 
-btn4 = Button(root,
-              text="Top Selling Products",
-              width=25,
-              command=top_products)
+Button(frame, text="Forecast", width=20, command=forecast).pack(pady=5)
 
-btn4.pack(pady=5)
+Button(frame, text="Inference", width=20, command=inference).pack(pady=5)
 
 
-btn5 = Button(root,
-              text="Customer Segmentation",
-              width=25,
-              command=customer_segmentation)
+# GRAPH AREA
 
-btn5.pack(pady=5)
+fig = plt.Figure(figsize=(6,5))
 
+canvas = FigureCanvasTkAgg(fig, master=root)
 
-btn6 = Button(root,
-              text="Monthly Sales Trend",
-              width=25,
-              command=monthly_sales)
-
-btn6.pack(pady=5)
+canvas.get_tk_widget().pack(side=LEFT)
 
 
-btn7 = Button(root,
-              text="ARIMA Forecast",
-              width=25,
-              command=arima_forecast)
+# TEXT OUTPUT AREA
 
-btn7.pack(pady=5)
+text_box = Text(root, width=40)
+
+text_box.pack(side=RIGHT, padx=10)
 
 
 root.mainloop()
