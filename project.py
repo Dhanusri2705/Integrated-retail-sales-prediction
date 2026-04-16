@@ -19,7 +19,7 @@ import scipy.stats as stats
 st.set_page_config(page_title="Universal Analytics Dashboard", layout="wide")
 st.title("📊 Integrated Predictive Modeling and Time Series Analysis for Retail Sales")
 
-# ------------------------------------------------
+ # ------------------------------------------------
 # SIDEBAR
 # ------------------------------------------------
 st.sidebar.title("📌 Analysis Menu")
@@ -213,6 +213,7 @@ if file:
         ax.set_title("Index Number Comparison")
         st.pyplot(fig)
 
+
 # ------------------------------------------------
 # REGRESSION
 # ------------------------------------------------
@@ -228,77 +229,95 @@ if option == "Regression Models":
 
         if X.shape[1] > 0:
 
-            # Linear Regression
-            st.subheader("Linear Regression")
-            lin = LinearRegression()
-            lin.fit(X, y)
-            y_pred = lin.predict(X)
+            # Use ONE feature for proper curve visualization
+            feature = X.iloc[:, 0]
 
-            st.write("Coefficients:", lin.coef_)
+            # ------------------------------------------------
+            # LINEAR REGRESSION (NATURAL LINE)
+            # ------------------------------------------------
+            st.subheader("Linear Regression")
+
+            lin = LinearRegression()
+            lin.fit(feature.values.reshape(-1,1), y)
+
+            x_range = np.linspace(feature.min(), feature.max(), 100)
+            y_line = lin.predict(x_range.reshape(-1,1))
 
             fig, ax = plt.subplots()
-            ax.scatter(y, y_pred)
-            ax.set_xlabel("Actual")
-            ax.set_ylabel("Predicted")
-            ax.set_title("Linear Regression")
+
+            ax.scatter(feature, y, alpha=0.5)
+            ax.plot(x_range, y_line, color='red')
+
+            ax.set_title("Linear Regression (Natural Line)")
+            ax.set_xlabel("Feature")
+            ax.set_ylabel("Sales")
+
             st.pyplot(fig)
 
-            # Polynomial Regression
+            # ------------------------------------------------
+            # POLYNOMIAL REGRESSION (CURVE)
+            # ------------------------------------------------
             st.subheader("Polynomial Regression")
+
             poly = PolynomialFeatures(2)
-            X_poly = poly.fit_transform(X)
+            X_poly = poly.fit_transform(feature.values.reshape(-1,1))
 
             lin.fit(X_poly, y)
-            y_poly = lin.predict(X_poly)
+
+            x_range = np.linspace(feature.min(), feature.max(), 100)
+            x_poly = poly.transform(x_range.reshape(-1,1))
+            y_curve = lin.predict(x_poly)
 
             fig, ax = plt.subplots()
-            ax.scatter(y, y_poly)
-            ax.set_xlabel("Actual")
-            ax.set_ylabel("Predicted")
-            ax.set_title("Polynomial Regression")
+
+            ax.scatter(feature, y, alpha=0.5)
+            ax.plot(x_range, y_curve, color='green')
+
+            ax.set_title("Polynomial Regression (Smooth Curve)")
+            ax.set_xlabel("Feature")
+            ax.set_ylabel("Sales")
+
             st.pyplot(fig)
 
-            # Logistic Regression (FIXED)
+            # ------------------------------------------------
+            # LOGISTIC REGRESSION (TRUE S-CURVE)
+            # ------------------------------------------------
             st.subheader("Logistic Regression")
 
             y_bin = (y > y.mean()).astype(int)
 
             if y_bin.nunique() > 1:
+
                 log = LogisticRegression(max_iter=1000)
-                log.fit(X, y_bin)
+                log.fit(feature.values.reshape(-1,1), y_bin)
 
-                probs = log.predict_proba(X)[:, 1]
-
-                # Use one feature for proper S-curve
-                feature = X.iloc[:, 0]
-                sorted_idx = np.argsort(feature)
-
-                x_sorted = feature.iloc[sorted_idx]
-                probs_sorted = probs[sorted_idx]
+                x_range = np.linspace(feature.min(), feature.max(), 100)
+                probs = log.predict_proba(x_range.reshape(-1,1))[:,1]
 
                 fig, ax = plt.subplots()
-                ax.plot(x_sorted, probs_sorted, color='red', label="Sigmoid Curve")
+
                 ax.scatter(feature, y_bin, alpha=0.3)
+                ax.plot(x_range, probs, color='red', linewidth=2)
 
                 ax.set_title("Logistic Regression (S-Curve)")
                 ax.set_xlabel("Feature")
                 ax.set_ylabel("Probability")
-                ax.legend()
 
                 st.pyplot(fig)
 
             else:
-                st.warning("Logistic Regression needs at least two target classes.")
+                st.warning("Logistic Regression needs two classes.")
 
         else:
-            st.warning("No predictor columns available for regression.")
+            st.warning("No predictor columns available")
 
     else:
-        st.warning("Not enough numeric columns for regression.")
-    # ------------------------------------------------
-    # ANOVA
-    # ------------------------------------------------
-    if option == "ANOVA & Tests":
+        st.warning("Not enough numeric columns")
+
+# ------------------------------------------------
+# ANOVA
+# ------------------------------------------------
+if option == "ANOVA & Tests":
 
         if len(numeric.columns) >= 2:
 
@@ -315,10 +334,10 @@ if option == "Regression Models":
         else:
             st.warning("At least two numeric columns are required.")
 
-    # ------------------------------------------------
-    # TIME SERIES
-    # ------------------------------------------------
-    if option == "Time Series Analysis":
+# ------------------------------------------------
+# TIME SERIES
+# ------------------------------------------------
+if option == "Time Series Analysis":
 
         if sales_month is not None and len(sales_month) >= 6:
 
@@ -348,10 +367,10 @@ if option == "Regression Models":
             st.warning("A valid date column with enough time points is required.")
 
 
-    # ------------------------------------------------
-    # FEATURE SELECTION
-    # ------------------------------------------------
-    if option == "Feature Selection":
+# ------------------------------------------------
+# FEATURE SELECTION
+# ------------------------------------------------
+if option == "Feature Selection":
 
         if len(numeric.columns) > 1:
 
@@ -382,7 +401,7 @@ if option == "Regression Models":
             st.warning("Not enough numeric columns for feature selection.")
 
 
- # ------------------------------------------------
+# ------------------------------------------------
 # DIMENSIONALITY REDUCTION (PCA + FA)
 # ------------------------------------------------
 from sklearn.decomposition import PCA, FactorAnalysis
@@ -425,45 +444,80 @@ if option == "Dimensionality Reduction":
 # ------------------------------------------------
 from sklearn.cluster import KMeans
 from scipy.cluster.hierarchy import dendrogram, linkage
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 
 if option == "Clustering Techniques":
 
     if len(numeric.columns) > 1:
 
-        # 🔥 FIX: USE SMALL SAMPLE (PREVENT MEMORY ERROR)
+        # 🔥 SAMPLE (SAFE)
         sample_data = numeric.sample(n=min(300, len(numeric)), random_state=42)
 
         scaler = StandardScaler()
         scaled_data = scaler.fit_transform(sample_data)
 
-        # K-Means
+        # ------------------------------------------------
+        # K-MEANS (CLEAR VISUAL)
+        # ------------------------------------------------
         st.subheader("K-Means Clustering")
 
         kmeans = KMeans(n_clusters=3, random_state=42)
         clusters = kmeans.fit_predict(scaled_data)
 
+        # 🔥 REDUCE TO 2D (IMPORTANT)
+        pca = PCA(n_components=2)
+        reduced = pca.fit_transform(scaled_data)
+
         fig, ax = plt.subplots()
-        ax.scatter(scaled_data[:, 0], scaled_data[:, 1], c=clusters)
-        ax.set_title("K-Means Clusters")
+
+        ax.scatter(
+            reduced[:, 0],
+            reduced[:, 1],
+            c=clusters,
+            alpha=0.6
+        )
+
+        # 🔥 CENTROIDS
+        centroids = kmeans.cluster_centers_
+        centroids_2d = pca.transform(centroids)
+
+        ax.scatter(
+            centroids_2d[:, 0],
+            centroids_2d[:, 1],
+            marker='X',
+            s=200
+        )
+
+        ax.set_title("K-Means Clustering (Clear Groups)")
+        ax.set_xlabel("Component 1")
+        ax.set_ylabel("Component 2")
+
         st.pyplot(fig)
 
-        # Hierarchical Clustering
+        # ------------------------------------------------
+        # HIERARCHICAL (CLEAN)
+        # ------------------------------------------------
         st.subheader("Hierarchical Clustering")
 
         linked = linkage(scaled_data, method='ward')
 
-        fig, ax = plt.subplots()
-        dendrogram(linked)
-        ax.set_title("Dendrogram")
+        fig, ax = plt.subplots(figsize=(10, 5))
+        dendrogram(linked, ax=ax)
+
+        ax.set_title("Dendrogram (Cluster Formation)")
+        ax.set_xlabel("Data Points")
+        ax.set_ylabel("Distance")
+
         st.pyplot(fig)
 
     else:
         st.warning("Not enough numeric data")
 
-    # ------------------------------------------------
-    # PERFORMANCE
-    # ------------------------------------------------
-    if option == "Performance Evaluation":
+# ------------------------------------------------
+# PERFORMANCE
+# ------------------------------------------------
+if option == "Performance Evaluation":
 
         if sales_month is not None and len(sales_month) >= 6:
 
@@ -487,10 +541,10 @@ if option == "Clustering Techniques":
         else:
             st.warning("A valid date column with enough time points is required.")
 
-    # ------------------------------------------------
-    # INFERENCE
-    # ------------------------------------------------
-    if option == "Inference":
+# ------------------------------------------------
+# INFERENCE
+# ------------------------------------------------
+if option == "Inference":
 
         st.subheader("Dataset Inference")
 
