@@ -17,7 +17,7 @@ import scipy.stats as stats
 # PAGE CONFIG
 # ------------------------------------------------
 st.set_page_config(page_title="Universal Analytics Dashboard", layout="wide")
-st.title("📊 Universal Data Analytics Dashboard")
+st.title("📊 Integrated Predictive Modeling and Time Series Analysis for Retail Sales")
 
 # ------------------------------------------------
 # SIDEBAR
@@ -33,6 +33,8 @@ option = st.sidebar.radio(
         "ANOVA & Tests",
         "Time Series Analysis",
         "Feature Selection",
+        "Dimensionality Reduction",
+        "Clustering Techniques",
         "Performance Evaluation",
         "Inference"
     ]
@@ -54,18 +56,20 @@ if file:
         st.error("Error reading file")
         st.stop()
 
+    if df.empty:
+        st.error("Dataset is empty!")
+        st.stop()
+
+    # ------------------------------------------------
+    # DATA PREPROCESSING
+    # ------------------------------------------------
     df = df.drop_duplicates()
 
     for col in df.columns:
         if df[col].dtype == "object":
             df[col] = df[col].astype(str)
 
-    st.subheader("Dataset Preview")
-    st.dataframe(df.head())
-
-    # ------------------------------------------------
     # AUTO COLUMN DETECTION
-    # ------------------------------------------------
     date_col = None
     sales_col = None
     quantity_col = None
@@ -78,28 +82,20 @@ if file:
 
         if "date" in c or "time" in c:
             date_col = col
-
         if any(x in c for x in ["sales", "price", "amount", "revenue", "value", "total", "unitprice"]):
             sales_col = col
-
         if any(x in c for x in ["quantity", "qty", "units"]):
             quantity_col = col
-
         if any(x in c for x in ["product", "description", "item"]):
             product_col = col
-
         if "customer" in c:
             customer_col = col
-
         if "country" in c:
             country_col = col
 
     if not sales_col:
         sales_col = df.columns[0]
 
-    # ------------------------------------------------
-    # NUMERIC FIX
-    # ------------------------------------------------
     df[sales_col] = pd.to_numeric(df[sales_col], errors="coerce")
 
     if quantity_col:
@@ -110,9 +106,7 @@ if file:
 
     df = df.dropna(subset=["TotalSales"])
 
-    # ------------------------------------------------
     # DATE PROCESSING
-    # ------------------------------------------------
     sales_month = None
     if date_col:
         try:
@@ -121,44 +115,75 @@ if file:
             df["YearMonth"] = df[date_col].dt.to_period("M")
             sales_month = df.groupby("YearMonth")["TotalSales"].sum()
             sales_month.index = sales_month.index.to_timestamp()
-        except Exception:
-            date_col = None
+        except:
             sales_month = None
 
-    # ------------------------------------------------
-    # CLEAN NUMERIC
-    # ------------------------------------------------
+    # NUMERIC CLEANING
     numeric = df.select_dtypes(include="number").copy()
     numeric = numeric.replace([np.inf, -np.inf], np.nan)
     numeric = numeric.fillna(numeric.mean())
 
     # ------------------------------------------------
-    # OVERVIEW
+    # OVERVIEW (DATA PREPROCESSING + EDA)
     # ------------------------------------------------
     if option == "Overview":
 
-        st.subheader("Key Metrics")
+        st.subheader("📊 Data Preprocessing Summary")
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Total Revenue", f"{float(df['TotalSales'].sum()):,.0f}")
-        c2.metric("Transactions", len(df))
-        c3.metric("Average Sales", f"{float(df['TotalSales'].mean()):.2f}")
+        st.write("✔ Removed duplicate records")
+        st.write("✔ Converted categorical columns to string")
+        st.write("✔ Handled missing values using mean imputation")
+        st.write("✔ Converted numeric columns properly")
 
-        st.subheader("Descriptive Statistics")
-        st.dataframe(numeric.describe())
+        st.subheader("🔄 Data Transformation")
+        st.write("✔ Created feature: TotalSales = Price × Quantity")
 
-        st.subheader("Sales Distribution")
-        fig, ax = plt.subplots()
-        df["TotalSales"].hist(bins=30, ax=ax)
-        ax.set_xlabel("TotalSales")
-        ax.set_ylabel("Frequency")
-        ax.set_title("Histogram of Total Sales")
-        st.pyplot(fig)
+        if date_col:
+            st.write("✔ Converted date column and extracted Year-Month")
 
-        st.subheader("Correlation Matrix")
-        fig, ax = plt.subplots()
-        sns.heatmap(numeric.corr(), annot=True, cmap="coolwarm", ax=ax)
-        st.pyplot(fig)
+        st.subheader("📁 Dataset Preview")
+        st.dataframe(df.head())
+
+        if not numeric.empty:
+
+            st.subheader("📈 Descriptive Statistics")
+            st.dataframe(numeric.describe())
+
+            st.write("👉 Interpretation:")
+            st.write("- Mean shows average values")
+            st.write("- Std shows variability")
+            st.write("- Min & Max show range")
+
+            st.subheader("📊 Sales Distribution")
+            fig, ax = plt.subplots()
+            df["TotalSales"].hist(bins=30, ax=ax)
+            st.pyplot(fig)
+
+            st.subheader("📦 Boxplot")
+            fig, ax = plt.subplots()
+            sns.boxplot(x=df["TotalSales"], ax=ax)
+            st.pyplot(fig)
+
+            st.subheader("🔥 Correlation Matrix")
+            fig, ax = plt.subplots()
+            sns.heatmap(numeric.corr(), annot=True, cmap="coolwarm", ax=ax)
+            st.pyplot(fig)
+
+        else:
+            st.warning("No numeric data available")
+
+        if product_col:
+            st.subheader("🏆 Top Products")
+            top_products = df.groupby(product_col)["TotalSales"].sum().sort_values(ascending=False).head(5)
+            fig, ax = plt.subplots()
+            top_products.plot(kind="bar", ax=ax)
+            st.pyplot(fig)
+
+        if sales_month is not None:
+            st.subheader("📅 Monthly Trend")
+            fig, ax = plt.subplots()
+            sales_month.plot(ax=ax)
+            st.pyplot(fig)
 
     # ------------------------------------------------
     # INDEX NUMBERS
@@ -188,67 +213,88 @@ if file:
         ax.set_title("Index Number Comparison")
         st.pyplot(fig)
 
-    # ------------------------------------------------
-    # REGRESSION
-    # ------------------------------------------------
-    if option == "Regression Models":
+# ------------------------------------------------
+# REGRESSION
+# ------------------------------------------------
+if option == "Regression Models":
 
-        if len(numeric.columns) > 1:
+    if len(numeric.columns) > 1:
 
-            X = numeric.drop(columns=["TotalSales"], errors="ignore")
-            y = numeric["TotalSales"]
+        X = numeric.drop(columns=["TotalSales"], errors="ignore")
+        y = numeric["TotalSales"]
 
-            X = X.fillna(X.mean())
-            y = y.fillna(y.mean())
+        X = X.fillna(X.mean())
+        y = y.fillna(y.mean())
 
-            if X.shape[1] > 0:
-                st.subheader("Linear Regression")
-                lin = LinearRegression()
-                lin.fit(X, y)
-                y_pred = lin.predict(X)
+        if X.shape[1] > 0:
 
-                st.write("Coefficients:", lin.coef_)
+            # Linear Regression
+            st.subheader("Linear Regression")
+            lin = LinearRegression()
+            lin.fit(X, y)
+            y_pred = lin.predict(X)
+
+            st.write("Coefficients:", lin.coef_)
+
+            fig, ax = plt.subplots()
+            ax.scatter(y, y_pred)
+            ax.set_xlabel("Actual")
+            ax.set_ylabel("Predicted")
+            ax.set_title("Linear Regression")
+            st.pyplot(fig)
+
+            # Polynomial Regression
+            st.subheader("Polynomial Regression")
+            poly = PolynomialFeatures(2)
+            X_poly = poly.fit_transform(X)
+
+            lin.fit(X_poly, y)
+            y_poly = lin.predict(X_poly)
+
+            fig, ax = plt.subplots()
+            ax.scatter(y, y_poly)
+            ax.set_xlabel("Actual")
+            ax.set_ylabel("Predicted")
+            ax.set_title("Polynomial Regression")
+            st.pyplot(fig)
+
+            # Logistic Regression (FIXED)
+            st.subheader("Logistic Regression")
+
+            y_bin = (y > y.mean()).astype(int)
+
+            if y_bin.nunique() > 1:
+                log = LogisticRegression(max_iter=1000)
+                log.fit(X, y_bin)
+
+                probs = log.predict_proba(X)[:, 1]
+
+                # Use one feature for proper S-curve
+                feature = X.iloc[:, 0]
+                sorted_idx = np.argsort(feature)
+
+                x_sorted = feature.iloc[sorted_idx]
+                probs_sorted = probs[sorted_idx]
 
                 fig, ax = plt.subplots()
-                ax.scatter(y, y_pred)
-                ax.set_xlabel("Actual")
-                ax.set_ylabel("Predicted")
-                ax.set_title("Linear Regression")
+                ax.plot(x_sorted, probs_sorted, color='red', label="Sigmoid Curve")
+                ax.scatter(feature, y_bin, alpha=0.3)
+
+                ax.set_title("Logistic Regression (S-Curve)")
+                ax.set_xlabel("Feature")
+                ax.set_ylabel("Probability")
+                ax.legend()
+
                 st.pyplot(fig)
 
-                st.subheader("Polynomial Regression")
-                poly = PolynomialFeatures(2)
-                X_poly = poly.fit_transform(X)
-
-                lin.fit(X_poly, y)
-                y_poly = lin.predict(X_poly)
-
-                fig, ax = plt.subplots()
-                ax.scatter(y, y_poly)
-                ax.set_xlabel("Actual")
-                ax.set_ylabel("Predicted")
-                ax.set_title("Polynomial Regression")
-                st.pyplot(fig)
-
-                st.subheader("Logistic Regression")
-                y_bin = (y > y.mean()).astype(int)
-
-                if y_bin.nunique() > 1:
-                    log = LogisticRegression(max_iter=1000)
-                    log.fit(X, y_bin)
-                    pred = log.predict(X)
-
-                    fig, ax = plt.subplots()
-                    ax.scatter(range(len(pred)), pred)
-                    ax.set_title("Logistic Regression")
-                    st.pyplot(fig)
-                else:
-                    st.warning("Logistic Regression needs at least two target classes.")
             else:
-                st.warning("No predictor columns available for regression.")
-        else:
-            st.warning("Not enough numeric columns for regression.")
+                st.warning("Logistic Regression needs at least two target classes.")
 
+        else:
+            st.warning("No predictor columns available for regression.")
+
+    else:
+        st.warning("Not enough numeric columns for regression.")
     # ------------------------------------------------
     # ANOVA
     # ------------------------------------------------
@@ -301,6 +347,7 @@ if file:
         else:
             st.warning("A valid date column with enough time points is required.")
 
+
     # ------------------------------------------------
     # FEATURE SELECTION
     # ------------------------------------------------
@@ -333,6 +380,85 @@ if file:
                 st.warning("No predictor columns available for feature selection.")
         else:
             st.warning("Not enough numeric columns for feature selection.")
+
+
+ # ------------------------------------------------
+# DIMENSIONALITY REDUCTION (PCA + FA)
+# ------------------------------------------------
+from sklearn.decomposition import PCA, FactorAnalysis
+from sklearn.preprocessing import StandardScaler
+
+if option == "Dimensionality Reduction":
+
+    if len(numeric.columns) > 1:
+
+        scaler = StandardScaler()
+        scaled_data = scaler.fit_transform(numeric)
+
+        # PCA
+        st.subheader("PCA Analysis")
+
+        pca = PCA()
+        pca_data = pca.fit_transform(scaled_data)
+
+        fig, ax = plt.subplots()
+        ax.scatter(pca_data[:, 0], pca_data[:, 1])
+        ax.set_title("PCA Projection")
+        st.pyplot(fig)
+
+        # Factor Analysis
+        st.subheader("Factor Analysis")
+
+        fa = FactorAnalysis(n_components=2)
+        fa_data = fa.fit_transform(scaled_data)
+
+        fig, ax = plt.subplots()
+        ax.scatter(fa_data[:, 0], fa_data[:, 1])
+        ax.set_title("Factor Analysis Plot")
+        st.pyplot(fig)
+
+    else:
+        st.warning("Not enough numeric data")
+
+# ------------------------------------------------
+# CLUSTERING
+# ------------------------------------------------
+from sklearn.cluster import KMeans
+from scipy.cluster.hierarchy import dendrogram, linkage
+
+if option == "Clustering Techniques":
+
+    if len(numeric.columns) > 1:
+
+        # 🔥 FIX: USE SMALL SAMPLE (PREVENT MEMORY ERROR)
+        sample_data = numeric.sample(n=min(300, len(numeric)), random_state=42)
+
+        scaler = StandardScaler()
+        scaled_data = scaler.fit_transform(sample_data)
+
+        # K-Means
+        st.subheader("K-Means Clustering")
+
+        kmeans = KMeans(n_clusters=3, random_state=42)
+        clusters = kmeans.fit_predict(scaled_data)
+
+        fig, ax = plt.subplots()
+        ax.scatter(scaled_data[:, 0], scaled_data[:, 1], c=clusters)
+        ax.set_title("K-Means Clusters")
+        st.pyplot(fig)
+
+        # Hierarchical Clustering
+        st.subheader("Hierarchical Clustering")
+
+        linked = linkage(scaled_data, method='ward')
+
+        fig, ax = plt.subplots()
+        dendrogram(linked)
+        ax.set_title("Dendrogram")
+        st.pyplot(fig)
+
+    else:
+        st.warning("Not enough numeric data")
 
     # ------------------------------------------------
     # PERFORMANCE
